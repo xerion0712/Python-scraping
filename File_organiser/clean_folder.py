@@ -1,109 +1,98 @@
-from colorama import Fore
-import os
+from bs4 import BeautifulSoup
+import requests
+import pandas as pd
+import logging
 
-all_paths=[]
-dir_name = input( 'Enter the name of directory you want to clear: ')
-extension = set()
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
-
-def source_path(dir_name):
-	for root in os.walk("/home"):
-		if dir_name == root[0].split('/')[-1]: 
-			all_paths.append(root[0])
-
-	for i in range(len(all_paths)):
-		print()
-		print("{}. {}".format(i+1,all_paths[i]))
-
-	if len(all_paths) == 0:
-		print(Fore.LIGHTRED_EX + 'No directory found')
-		exit()
-
-	choice = int(input('\nEnter the option number: '))
-
-	if choice < 1 or choice > len(all_paths):
-		print(Fore.LIGHTRED_EX +'Wrong choice entered')
-		exit()
-
-	else:
-		path = all_paths[choice-1]
-
-	return path
+url = 'https://www.buyucoin.com/altcoin-rate-inr-india'
 
 
-def print_before(path):
-	print("Cleaning {} located at {}\n".format(path.split('/')[-1],path))
+def get_data():
+    """
+    Fetch data from the website and parse it.
+    """
+    try:
+        logging.info(f"Fetching data from {url}...")
+        res = requests.get(url)
+        res.raise_for_status()  # Check if the request was successful
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error fetching data from {url}: {e}")
+        return []
 
-	print(Fore.LIGHTBLUE_EX  + "Before cleaning\n" + Fore.RESET)
+    soup = BeautifulSoup(res.text, 'lxml')
 
-	for files in os.listdir(path):
-		print(files,end='\t')
-	print()
+    # Find the table with the altcoin data
+    table = soup.find('table', {'id': 'inr_rate'})
+    if not table:
+        logging.error("Error: Could not find the table with id 'inr_rate'.")
+        return []
 
+    # Parse rows from the table
+    rows = table.find_all('tr')
+    data = []
 
-def destination_path(path): 
-	os.chdir(path)
+    for row in rows:
+        row_data = [item.text.strip() for item in row.find_all('td')]
+        if row_data:
+            data.append(row_data)
 
-	for f in os.listdir():
-		name = (os.path.splitext(f))[0]
-		ext = (os.path.splitext(f))[1]
-
-		extension.add(ext[1:])
-
-	new_dir = "New" + path.split('/')[-1]
-	new_dir_path = os.path.join(path,new_dir)
-
-	if not os.path.exists(new_dir_path):
-		os.mkdir(new_dir_path)
-
-	return new_dir_path,new_dir
-
-
-def organise(new_dir_path,new_dir,path):
-	for ext in extension:
-		folder = os.path.join(new_dir_path,ext) 
-		
-		if not os.path.exists(folder):
-			os.mkdir(folder)
-
-		if ext !='':
-			for f in os.listdir():
-				if os.path.splitext(f)[1].strip('.') == ext:
-					os.rename(f,os.path.join(folder,f))
-
-		else:
-			for f in os.listdir():
-				if f!=new_dir and os.path.splitext(f)[1].strip('.') == ext:
-					print(f)
-					inner_folder = os.path.join(new_dir_path,f)
-					
-					if os.path.exists(inner_folder):
-						os.chdir(os.path.join(path,f))
-						for file in os.listdir():
-							new_path = os.path.join(inner_folder,file)
-							os.rename(file,new_path)
-						os.rmdir(os.path.join(path,f))	
-
-					else:
-						os.rename(f,inner_folder)
+    return data
 
 
-def print_after(path):
-
-	print(Fore.LIGHTBLUE_EX  + "\nAfter cleaning\n" + Fore.RESET)
-
-	for files in os.listdir(path):
-		print(files,end='\t')
-
-	print(Fore.LIGHTMAGENTA_EX  + "\n\nCLEANED\n" + Fore.RESET)
-
-
-def file_manage():
-	path = source_path(dir_name)
-	print_before(path)
-	new_dir_path, new_dir = destination_path(path)
-	organise(new_dir_path, new_dir,path)
-	print_after(path)
+def print_data(data):
+    """
+    Print the data in a formatted way.
+    """
+    if data:
+        header = ['Coin', 'Price (INR)', 'Change (24h)', 'Volume (24h)']
+        logging.info(f"Printing {len(data)} rows of data...")
+        print(" {:<25} {:<20} {:<20} {}".format(*header))  # Print the header
+        for row in data:
+            print(" {:<25} {:<20} {:<20} {}".format(*row))
+    else:
+        logging.warning("No data to display.")
 
 
-file_manage()
+def store_csv(data):
+    """
+    Store the data in a CSV file.
+    """
+    if data:
+        df = pd.DataFrame(data, columns=['Coin', 'Price (INR)', 'Change (24h)', 'Volume (24h)'])
+        df.to_csv('Crypto.csv', index=False)
+        logging.info("Data has been stored in 'Crypto.csv'.")
+    else:
+        logging.warning("No data to store in CSV.")
+
+
+def store_excel(data):
+    """
+    Store the data in an Excel file.
+    """
+    if data:
+        df = pd.DataFrame(data, columns=['Coin', 'Price (INR)', 'Change (24h)', 'Volume (24h)'])
+        df.to_excel('Crypto.xlsx', sheet_name='Prices', index=False)
+        logging.info("Data has been stored in 'Crypto.xlsx'.")
+    else:
+        logging.warning("No data to store in Excel.")
+
+
+def main():
+    """
+    Main function to execute the scraping, display, and storage.
+    """
+    logging.info("Starting the scraping process...")
+    data = get_data()
+
+    if data:
+        print_data(data)
+        store_csv(data)
+        store_excel(data)
+    else:
+        logging.error("No data found to process.")
+
+
+if __name__ == '__main__':
+    main()
